@@ -158,23 +158,45 @@ async function fetchLiveScores() {
   if (!APISPORTS_KEY) {
     return { error: "Missing APISPORTS_KEY", games: [] };
   }
-  const url = `${APISPORTS_BASE}/games?live=all`;
-  const res = await fetch(url, {
-    headers: {
-      "x-apisports-key": APISPORTS_KEY,
-    },
+  const headers = {
+    "x-apisports-key": APISPORTS_KEY,
+  };
+  const liveUrl = `${APISPORTS_BASE}/games?live=all`;
+  const res = await fetch(liveUrl, {
+    headers,
   });
   if (!res.ok) {
     return { error: `API-Sports error: ${res.status}`, games: [] };
   }
-  const data = await res.json();
-  const games = (data.response || []).map((game) => {
+  let data = await res.json();
+  let responseGames = data.response || [];
+  if (responseGames.length === 0) {
+    const today = new Date().toISOString().slice(0, 10);
+    const fallbackUrl = `${APISPORTS_BASE}/games?date=${today}`;
+    const fallbackRes = await fetch(fallbackUrl, { headers });
+    if (!fallbackRes.ok) {
+      return { error: `API-Sports error: ${fallbackRes.status}`, games: [] };
+    }
+    data = await fallbackRes.json();
+    responseGames = data.response || [];
+  }
+  const nonLiveStatuses = new Set([
+    "NS",
+    "FT",
+    "AOT",
+    "FTOT",
+    "CANC",
+    "PST",
+    "POST",
+    "SUSP",
+  ]);
+  const games = responseGames.map((game) => {
     const homeTeam = game.teams?.home?.name;
     const awayTeam = game.teams?.away?.name;
     const homeScore = extractScore(game.scores?.home);
     const awayScore = extractScore(game.scores?.away);
     const status = game.status?.short || game.status?.long || "";
-    const isLive = Boolean(status);
+    const isLive = status ? !nonLiveStatuses.has(status) : false;
     return {
       homeTeam,
       awayTeam,
