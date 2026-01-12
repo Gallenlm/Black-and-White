@@ -190,22 +190,58 @@ async function fetchLiveScores() {
     "POST",
     "SUSP",
   ]);
-  const games = responseGames.map((game) => {
+  async function fetchStatsScores(gameId, homeId, awayId) {
+    if (!gameId) {
+      return { homeScore: null, awayScore: null };
+    }
+    const statsUrl = `${APISPORTS_BASE}/games/statistics?game=${gameId}`;
+    const statsRes = await fetch(statsUrl, { headers });
+    if (!statsRes.ok) {
+      return { homeScore: null, awayScore: null };
+    }
+    const statsData = await statsRes.json();
+    const statsResponse = statsData.response || [];
+    let homeScore = null;
+    let awayScore = null;
+    for (const entry of statsResponse) {
+      const teamId = entry.team?.id;
+      const points = extractScore(entry.statistics?.points || entry.statistics);
+      if (teamId === homeId && points != null) {
+        homeScore = points;
+      }
+      if (teamId === awayId && points != null) {
+        awayScore = points;
+      }
+    }
+    return { homeScore, awayScore };
+  }
+
+  const games = [];
+  for (const game of responseGames) {
     const homeTeam = game.teams?.home?.name;
     const awayTeam = game.teams?.away?.name;
-    const homeScore = extractScore(game.scores?.home);
-    const awayScore = extractScore(game.scores?.away);
+    let homeScore = extractScore(game.scores?.home);
+    let awayScore = extractScore(game.scores?.away);
     const status = game.status?.short || game.status?.long || "";
     const isLive = status ? !nonLiveStatuses.has(status) : false;
-    return {
+    if (isLive && (homeScore == null || awayScore == null)) {
+      const statsScores = await fetchStatsScores(
+        game.id,
+        game.teams?.home?.id,
+        game.teams?.away?.id
+      );
+      homeScore = homeScore ?? statsScores.homeScore;
+      awayScore = awayScore ?? statsScores.awayScore;
+    }
+    games.push({
       homeTeam,
       awayTeam,
       liveScore:
         isLive && homeScore != null && awayScore != null
           ? `${homeScore} - ${awayScore}`
           : null,
-    };
-  });
+    });
+  }
   return { games };
 }
 
